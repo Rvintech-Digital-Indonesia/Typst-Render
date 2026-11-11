@@ -1,0 +1,15 @@
+# Generated documents and temporary TypstRender files
+*.pdf
+.typstrender-*
+
+# Go build and test artifacts
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# Editor / OS files
+.DS_Store
+.idea/
+TODO.md
