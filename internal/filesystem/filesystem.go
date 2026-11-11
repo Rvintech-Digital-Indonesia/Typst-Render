@@ -69,8 +69,8 @@ func CreateTemplateStage(source string) (string, func(), error) {
 	return name, func() { _ = os.Remove(name) }, nil
 }
 
-// CreateOutputStage reserves a unique staging name beside the destination.
-// The reserved file is removed so Typst can create it itself.
+// CreateOutputStage reserves a unique output file beside the destination. Typst
+// can overwrite the empty file, and leaving it reserved avoids a filename race.
 func CreateOutputStage(destination string) (string, func(), error) {
 	f, err := os.CreateTemp(filepath.Dir(destination), ".typstrender-*.pdf")
 	if err != nil {
@@ -79,9 +79,6 @@ func CreateOutputStage(destination string) (string, func(), error) {
 	name := f.Name()
 	if err := f.Close(); err != nil {
 		_ = os.Remove(name)
-		return "", nil, err
-	}
-	if err := os.Remove(name); err != nil {
 		return "", nil, err
 	}
 	return name, func() { _ = os.Remove(name) }, nil

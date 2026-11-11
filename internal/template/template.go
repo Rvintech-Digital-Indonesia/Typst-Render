@@ -3,9 +3,16 @@ package template
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	texttemplate "text/template"
+)
+
+// Sentinel errors distinguish template syntax/execution failures from file I/O.
+var (
+	ErrParse   = errors.New("template parse failed")
+	ErrExecute = errors.New("template execution failed")
 )
 
 // TypstText escapes markup characters for insertion into a Typst text context.
@@ -15,7 +22,7 @@ func TypstText(value any) string {
 	var out bytes.Buffer
 	for _, r := range s {
 		switch r {
-		case '\\', '#', '*', '_', '[', ']', '$', '<', '>', '`':
+		case '\\', '#', '*', '_', '[', ']', '$', '<', '>', '`', '~', '@', '=', '-', '+', '/':
 			out.WriteRune('\\')
 		}
 		out.WriteRune(r)
@@ -34,11 +41,11 @@ func RenderFile(source, destination string, data any) error {
 		Funcs(texttemplate.FuncMap{"typstText": TypstText}).
 		Parse(string(content))
 	if err != nil {
-		return fmt.Errorf("parse template %q: %w", source, err)
+		return fmt.Errorf("%w: %q: %w", ErrParse, source, err)
 	}
 	var rendered bytes.Buffer
 	if err := t.Execute(&rendered, data); err != nil {
-		return fmt.Errorf("execute template %q: %w", source, err)
+		return fmt.Errorf("%w: %q: %w", ErrExecute, source, err)
 	}
 	if err := os.WriteFile(destination, rendered.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write rendered template: %w", err)

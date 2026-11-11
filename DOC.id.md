@@ -1,100 +1,96 @@
 # Dokumentasi API TypstRender
 
-## 1. Ringkasan
+## Gambaran umum dan fitur
 
-TypstRender adalah library Go dari PT Rvintech Digital Indonesia yang mengisi template sumber Typst dengan data Go lalu mengompilasinya menjadi PDF menggunakan Typst CLI resmi. Library ini membungkus compiler eksternal, bukan compiler pure-Go.
+TypstRender merender file sumber `.typ` yang berisi sintaks Go `text/template` menjadi PDF dengan menjalankan Typst CLI resmi melalui `os/exec`. Fitur mencakup template statis dan dinamis, field bertingkat, kondisi, iterasi, pembatalan context, timeout, lokasi binary kustom, validasi PDF, dan output staging. Ini bukan compiler Typst pure-Go.
 
-## 2. Fitur
+## Persyaratan sistem dan instalasi
 
-- Variabel, field bertingkat, `if`, `range`, map, struct, slice, dan array melalui `text/template`.
-- Pembatalan context dan timeout kompilasi yang dapat dikonfigurasi.
-- Temporary file per render, penggunaan concurrent, validasi header PDF, dan penggantian output atomik.
-- Tidak ada dependency modul Go pihak ketiga.
-
-## 3. Persyaratan sistem
-
-Go 1.27+ dan Typst CLI yang terpasang. Modul menggunakan standard library Go; pembuatan PDF tetap membutuhkan executable Typst terpisah.
-
-## 4. Instalasi
+Gunakan Go 1.27 atau lebih baru dan pasang Typst CLI resmi secara terpisah. Executable harus tersedia sebagai `typst` di `PATH`, kecuali `Options.BinaryPath` diatur. Module Go ini tidak memiliki dependency eksternal.
 
 ```sh
 go get github.com/Rvintech-Digital-Indonesia/TypstRender
 ```
 
-Pasang CLI dari [panduan resmi Typst](https://typst.app/open-source/#download), lalu periksa dengan `typst --version`.
-
-## 5. Mulai cepat
+## Mulai cepat
 
 ```go
-path, err := typstrender.RenderFile(ctx, "templates/invoice.typ", "output/invoice.pdf", data)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(path)
+data := map[string]any{"Customer": map[string]any{"Name": "Rovino"}}
+path, err := typstrender.RenderFile(ctx, "invoice.typ", "output/invoice.pdf", data)
 ```
 
-`ctx` wajib diisi. Direktori output dibuat otomatis. Path hasil bersifat absolut dan bersih. Saat berhasil, file tujuan yang ada akan diganti; saat gagal, file tujuan sebelumnya tetap ada.
+Periksa `err` sebelum menggunakan `path`. Jika berhasil, `path` adalah path absolut yang sudah dibersihkan.
 
-## 6. Sintaks template dinamis
+## Sintaks template dinamis
 
-```typst
-= Invoice
-Customer: {{ typstText .Customer.Name }}
-{{ range .Items }}
-- {{ typstText .Name }}: {{ .Price }}
-{{ end }}
-{{ if .Paid }}Paid{{ else }}Payment pending{{ end }}
-```
+Template menggunakan Go `text/template`: `{{ .Nama }}`, field bertingkat (`{{ .Customer.Nama }}`), `{{ if .Aktif }}...{{ else }}...{{ end }}`, dan `{{ range .Items }}...{{ end }}`. Data dapat berupa `map[string]any`, struct dengan field exported, slice, array, atau nil. Key map yang tidak ada menghasilkan error (`missingkey=error`).
 
-Key map yang dirujuk harus tersedia (`missingkey=error`). `typstText` meng-escape karakter markup hanya untuk teks Typst. Fungsi ini tidak mengamankan nilai untuk kode, ekspresi, path, atau URL. `text/template` tidak melakukan escaping otomatis; template statis dan nilai yang memuat sintaks Typst mentah harus tepercaya.
+Gunakan `{{ typstText .Nama }}` untuk meng-escape karakter markup Typst umum ketika memasukkan teks yang tidak tepercaya ke konteks teks Typst. Helper ini tidak mengamankan kode, ekspresi, path, atau URL. Template dan nilai markup Typst mentah harus berasal dari sumber tepercaya.
 
-## 7. Referensi API
+## Referensi API
+
+### `RenderFile`
 
 ```go
 func RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
-func New(options Options) *Renderer
-func (r *Renderer) RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
-func IsTemplateInput(path string) bool
 ```
 
-`RenderFile` menerima input `.typ` dan `.typst`, serta mewajibkan output `.pdf`. `data` boleh nil. Template sementara dibuat di samping sumber agar import dan asset relatif tetap ditemukan. Template asli tidak diubah.
+Merender template `.typ` dan mengembalikan path PDF absolut. Direktori output dibuat bila perlu. Template sumber tidak diubah; data nil valid untuk dokumen statis. Output lama hanya diganti setelah kompilasi berhasil dan validasi PDF lolos.
 
-## 8. Konfigurasi
+### `Options` dan `New`
 
 ```go
 type Options struct {
-    BinaryPath string        // default: "typst" dari PATH
-    Timeout    time.Duration // default: 30 detik jika nol atau negatif
+    BinaryPath string
+    Timeout    time.Duration
 }
+
+func New(options Options) *Renderer
+func (r *Renderer) RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
 ```
 
-Contoh: `typstrender.New(typstrender.Options{BinaryPath: "/usr/local/bin/typst", Timeout: 45*time.Second})`.
+`BinaryPath` kosong akan mencari `typst` melalui `PATH`. `Timeout` nol atau negatif memilih default 30 detik. Renderer dapat digunakan ulang secara concurrent.
 
-## 9. Penanganan error
+### `IsTemplateInput`
 
-Gunakan `errors.Is` dengan `ErrInvalidInput`, `ErrTemplateNotFound`, `ErrTemplateExecution`, `ErrBinaryNotFound`, `ErrCompileFailed`, dan `ErrOutputInvalid`. Pembatalan dan deadline mempertahankan `context.Canceled` serta `context.DeadlineExceeded`. Error compiler menyertakan stderr yang dibatasi ukurannya. Error filesystem mempertahankan penyebab asli.
-
-## 10. Pengujian
-
-```sh
-go test ./...
-go test -race ./...
-go vet ./...
-go test -cover ./...
-go test -tags integration ./...
-go test -bench=. ./...
+```go
+func IsTemplateInput(path string) bool
 ```
 
-Unit test menggunakan executable palsu. Integration test memakai Typst CLI asli dan dilewati jika CLI tidak tersedia.
+Mengembalikan apakah path menggunakan ekstensi `.typ` (tanpa membedakan huruf besar/kecil).
 
-## 11. Batasan dan keamanan
+### Error
 
-- Typst harus dipasang terpisah dan tersedia saat runtime.
-- Helper hanya mendukung konteks teks Typst, bukan semua konteks bahasanya.
-- Template tidak tepercaya dapat menjalankan fitur Typst; proseslah sebagai kode tidak tepercaya. Jangan interpolasi markup mentah yang tidak tepercaya.
-- Staging source memerlukan izin tulis pada direktori template untuk mempertahankan resolusi resource relatif.
-- Penggantian atomik bergantung pada semantik rename filesystem.
+Gunakan `errors.Is` untuk memeriksa `ErrInvalidInput`, `ErrTemplateNotFound`, `ErrTemplateExecution`, `ErrBinaryNotFound`, `ErrCompileFailed`, dan `ErrOutputInvalid`. Error pembatalan dan timeout juga membungkus `context.Canceled` dan `context.DeadlineExceeded`. Error filesystem mempertahankan penyebab aslinya.
 
-## 12. Lisensi
+## Konfigurasi dan perilaku output
 
-Ketentuan lisensi belum dipilih pemilik proyek. Jangan mendistribusikan proyek di bawah lisensi asumsi sebelum `LICENSE.md` disetujui.
+Hanya input `.typ` dan output `.pdf` yang diterima. Path output relatif maupun absolut didukung; hasilnya absolut dan dibersihkan. Typst dijalankan tanpa shell dengan argumen terpisah. Timeout default 30 detik. File sumber sementara dan PDF staging memakai nama unik di samping file terkait; staging sumber dekat input mempertahankan resolusi import dan asset relatif. PDF staging yang valid di-rename menjadi output. Kegagalan membersihkan file staging dan menjaga output lama. Hindari berbagi direktori sumber yang dapat ditulis dengan pengguna tidak tepercaya selama render.
+
+## Penanganan error
+
+```go
+path, err := typstrender.RenderFile(ctx, "invoice.typ", "out/invoice.pdf", data)
+if err != nil {
+    switch {
+    case errors.Is(err, typstrender.ErrBinaryNotFound):
+        log.Println("Pasang Typst CLI")
+    case errors.Is(err, context.DeadlineExceeded):
+        log.Println("Rendering melewati batas waktu")
+    case errors.Is(err, typstrender.ErrCompileFailed):
+        log.Println("Typst menolak dokumen:", err)
+    default:
+        log.Println("Render gagal:", err)
+    }
+    return
+}
+log.Println("Dibuat:", path)
+```
+
+## Pengujian
+
+Jalankan `go test ./...`, `go test -race ./...`, `go vet ./...`, dan `go test -cover ./...`. Integration test menggunakan build tag: `go test -tags=integration ./...`; Typst CLI resmi harus tersedia. Jalankan demo dengan `go run ./examples/demo` dari root proyek.
+
+## Batasan
+
+Typst harus dipasang terpisah. Library hanya memvalidasi signature PDF, bukan seluruh spesifikasi PDF. `typstText` hanya untuk konteks teks. Library tidak mengisolasi template atau membatasi akses filesystem Typst; timeout membatasi durasi proses. Pemilik proyek belum memilih lisensi; lihat item lisensi yang belum dicentang di `TODO.md`.

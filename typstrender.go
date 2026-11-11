@@ -84,7 +84,10 @@ func (r *Renderer) RenderFile(ctx context.Context, inputPath, outputPath string,
 	}
 	defer cleanupTemplate()
 	if err := tpl.RenderFile(inputAbs, templateFile, data); err != nil {
-		return "", fmt.Errorf("%w: %w", ErrTemplateExecution, err)
+		if errors.Is(err, tpl.ErrParse) || errors.Is(err, tpl.ErrExecute) {
+			return "", fmt.Errorf("%w: %w", ErrTemplateExecution, err)
+		}
+		return "", fmt.Errorf("render template: %w", err)
 	}
 
 	stageOutput, cleanupOutput, err := filesystem.CreateOutputStage(outputAbs)

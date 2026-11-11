@@ -14,6 +14,9 @@ func TestRenderFile(t *testing.T) {
 		want string
 	}{
 		{"map and range", `{{ .Customer.Name }}:{{ range .Items }}{{ . }};{{ end }}`, map[string]any{"Customer": map[string]any{"Name": "Rvin"}, "Items": []string{"a", "b"}}, "Rvin:a;b;"},
+		{"nested struct", `{{ .Customer.Name }}`, struct {
+			Customer struct{ Name string }
+		}{Customer: struct{ Name string }{Name: "Nested"}}, "Nested"},
 		{"struct and conditional", `{{ if .Active }}{{ .Name }}{{ else }}off{{ end }}`, struct {
 			Name   string
 			Active bool
@@ -69,10 +72,10 @@ func TestRenderFileErrors(t *testing.T) {
 }
 
 func TestTypstText(t *testing.T) {
-	got := TypstText(`#heading [a_b] *x* $y$ <z> \`)
-	want := `\#heading \[a\_b\] \*x\* \$y\$ \<z\> \\`
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
+	for _, char := range []string{"\\", "#", "*", "_", "[", "]", "$", "<", ">", "`", "~", "@", "=", "-", "+", "/"} {
+		if got, want := TypstText(char), "\\"+char; got != want {
+			t.Errorf("TypstText(%q) = %q, want %q", char, got, want)
+		}
 	}
 }
 

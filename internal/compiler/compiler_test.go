@@ -37,6 +37,14 @@ func TestCompileErrors(t *testing.T) {
 	}
 }
 
+func TestCompileNonzeroWithoutDiagnostics(t *testing.T) {
+	compiler := makeCompiler(t, `exit 2`)
+	err := Compile(context.Background(), compiler, "in.typ", "out.pdf")
+	if !errors.Is(err, ErrCompileFailed) || !strings.Contains(err.Error(), "code 2") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestMissingBinary(t *testing.T) {
 	err := Compile(context.Background(), filepath.Join(t.TempDir(), "missing"), "in.typ", "out.pdf")
 	if !errors.Is(err, ErrBinaryNotFound) {
@@ -51,5 +59,24 @@ func TestValidatePDFRejectsInvalidOutput(t *testing.T) {
 	}
 	if err := ValidatePDF(path); !errors.Is(err, ErrOutputInvalid) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidatePDFMissingFile(t *testing.T) {
+	err := ValidatePDF(filepath.Join(t.TempDir(), "missing.pdf"))
+	if !errors.Is(err, ErrOutputInvalid) || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLimitedBufferCapsDiagnostics(t *testing.T) {
+	var b limitedBuffer
+	input := strings.Repeat("x", maxDiagnosticBytes+100)
+	n, err := b.Write([]byte(input))
+	if err != nil || n != len(input) {
+		t.Fatalf("Write returned (%d, %v)", n, err)
+	}
+	if len(b.String()) != maxDiagnosticBytes {
+		t.Fatalf("diagnostic length = %d, want %d", len(b.String()), maxDiagnosticBytes)
 	}
 }

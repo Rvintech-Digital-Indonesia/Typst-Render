@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -31,7 +32,7 @@ func main() {
 
 	staticPath, err := renderer.RenderFile(ctx, "testdata/templates/basic.typ", "output/basic.pdf", nil)
 	if err != nil {
-		log.Fatal(err)
+		fatalRender(err)
 	}
 	fmt.Println("Static PDF:", staticPath)
 
@@ -45,7 +46,7 @@ func main() {
 	}
 	path, err := typstrender.RenderFile(ctx, "testdata/templates/invoice.typ", "output/invoice-map.pdf", mapData)
 	if err != nil {
-		log.Fatal(err)
+		fatalRender(err)
 	}
 	fmt.Println("Map invoice PDF:", path)
 
@@ -56,7 +57,29 @@ func main() {
 	}
 	path, err = renderer.RenderFile(ctx, "testdata/templates/invoice.typ", "output/invoice-struct.pdf", structData)
 	if err != nil {
-		log.Fatal(err)
+		fatalRender(err)
 	}
 	fmt.Println("Struct invoice PDF:", path)
+
+	arrayPath, err := renderer.RenderFile(ctx, "examples/demo/templates/list.typ", "output/list.pdf", [3]string{"Typst", "Go", "PDF"})
+	if err != nil {
+		fatalRender(err)
+	}
+	fmt.Println("Array PDF:", arrayPath)
+}
+
+func fatalRender(err error) {
+	switch {
+	case errors.Is(err, typstrender.ErrBinaryNotFound):
+		log.Printf("Typst CLI is unavailable: %v", err)
+	case errors.Is(err, context.DeadlineExceeded):
+		log.Printf("Rendering timed out: %v", err)
+	case errors.Is(err, context.Canceled):
+		log.Printf("Rendering was canceled: %v", err)
+	case errors.Is(err, typstrender.ErrCompileFailed):
+		log.Printf("Typst could not compile the document: %v", err)
+	default:
+		log.Printf("Rendering failed: %v", err)
+	}
+	os.Exit(1)
 }

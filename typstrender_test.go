@@ -130,6 +130,28 @@ func TestRenderValidationErrors(t *testing.T) {
 	if _, err := New(Options{BinaryPath: filepath.Join(dir, "missing-bin")}).RenderFile(context.Background(), input, filepath.Join(dir, "out.pdf"), nil); !errors.Is(err, ErrBinaryNotFound) {
 		t.Fatalf("expected missing binary error, got %v", err)
 	}
+	if _, err := RenderFile(nil, input, filepath.Join(dir, "out.pdf"), nil); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected nil context error, got %v", err)
+	}
+	if !IsTemplateInput("invoice.typ") || IsTemplateInput("invoice.typst") || IsTemplateInput("invoice.pdf") {
+		t.Fatal("unexpected template extension classification")
+	}
+}
+
+func TestInvalidCompilerOutputIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "in.typ")
+	if err := os.WriteFile(input, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "out.pdf")
+	bin := fakeTypst(t, `printf 'not-pdf' > "$3"`)
+	if _, err := New(Options{BinaryPath: bin}).RenderFile(context.Background(), input, output, nil); !errors.Is(err, ErrOutputInvalid) {
+		t.Fatalf("expected invalid PDF error, got %v", err)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("invalid output was committed: %v", err)
+	}
 }
 
 func TestConcurrentRendering(t *testing.T) {

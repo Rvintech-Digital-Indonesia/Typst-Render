@@ -3,7 +3,6 @@ name: CI
 on:
   push:
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,6 +26,6 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Coverage
-        run: go test -coverprofile=coverage.out ./...
-      - name: Integration tests with Typst CLI
-        run: go test -tags integration ./...
+        run: go test -cover ./...
+      - name: Integration tests
+        run: go test -tags=integration ./...

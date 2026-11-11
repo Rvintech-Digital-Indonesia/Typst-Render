@@ -1,100 +1,96 @@
-# TypstRender API Documentation
+# TypstRender API documentation
 
-## 1. Overview
+## Overview and features
 
-TypstRender is a Go library by PT Rvintech Digital Indonesia that fills Typst source templates with Go data and compiles the result to PDF using the official Typst CLI. It is a wrapper around the external compiler, not a pure-Go compiler.
+TypstRender renders `.typ` source files containing Go `text/template` actions to PDF by invoking the official Typst CLI with `os/exec`. It supports static and dynamic templates, nested fields, conditionals, iteration, context cancellation, timeouts, custom binary paths, PDF validation, and staged output. It is not a pure-Go Typst compiler.
 
-## 2. Features
+## Requirements and installation
 
-- Go `text/template` variables, nested fields, `if`, `range`, maps, structs, slices, and arrays.
-- Context cancellation and a configurable compilation timeout.
-- Per-render temporary files, concurrent use, PDF header validation, and atomic output replacement.
-- No third-party Go module dependencies.
-
-## 3. System requirements
-
-Go 1.27+ and an installed Typst CLI. The library module uses the Go standard library; PDF generation requires the separate Typst executable.
-
-## 4. Installation
+Use Go 1.27 or newer and install the official Typst CLI separately. The executable must be on `PATH` as `typst`, unless `Options.BinaryPath` supplies its path. The module has no external dependencies.
 
 ```sh
 go get github.com/Rvintech-Digital-Indonesia/TypstRender
 ```
 
-Install the CLI using the [official Typst guide](https://typst.app/open-source/#download), then check `typst --version`.
-
-## 5. Quick start
+## Quick start
 
 ```go
-path, err := typstrender.RenderFile(ctx, "templates/invoice.typ", "output/invoice.pdf", data)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(path)
+data := map[string]any{"Customer": map[string]any{"Name": "Rovino"}}
+path, err := typstrender.RenderFile(ctx, "invoice.typ", "output/invoice.pdf", data)
 ```
 
-`ctx` is required. Output directories are created automatically. The returned path is absolute and cleaned. On success, an existing destination is replaced; on failure, an existing destination stays intact.
+Check `err` before using `path`. On success, the returned path is absolute and cleaned.
 
-## 6. Dynamic template syntax
+## Dynamic template syntax
 
-```typst
-= Invoice
-Customer: {{ typstText .Customer.Name }}
-{{ range .Items }}
-- {{ typstText .Name }}: {{ .Price }}
-{{ end }}
-{{ if .Paid }}Paid{{ else }}Payment pending{{ end }}
-```
+Templates use Go `text/template`: `{{ .Name }}`, nested fields (`{{ .Customer.Name }}`), `{{ if .Paid }}...{{ else }}...{{ end }}`, and `{{ range .Items }}...{{ end }}`. Data can be `map[string]any`, structs with exported fields, slices, arrays, or nil. Missing map keys are errors (`missingkey=error`).
 
-Map keys that are referenced must exist (`missingkey=error`). `typstText` escapes markup characters for Typst text markup only. It does not make a value safe for code, expressions, paths, or URLs. Static templates and values that contain raw Typst syntax must be trusted; `text/template` itself does not escape output.
+Use `{{ typstText .Name }}` to escape common Typst markup characters when inserting untrusted text in a Typst text context. This does not make values safe in code, expressions, paths, or URLs. Templates and raw Typst markup values must come from trusted sources.
 
-## 7. API reference
+## API reference
+
+### `RenderFile`
 
 ```go
 func RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
-func New(options Options) *Renderer
-func (r *Renderer) RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
-func IsTemplateInput(path string) bool
 ```
 
-`RenderFile` accepts `.typ` and `.typst` inputs and requires a `.pdf` output. `data` may be nil. Templates are staged beside the original source so relative imports and assets continue to resolve. The source template is not modified.
+Renders a `.typ` template and returns the resulting absolute PDF path. It creates the output directory if needed, preserves the source template, and accepts nil data for static documents. Existing output is replaced only after successful compilation and PDF validation.
 
-## 8. Configuration
+### `Options` and `New`
 
 ```go
 type Options struct {
-    BinaryPath string        // default: "typst" resolved from PATH
-    Timeout    time.Duration // default: 30 seconds when zero or negative
+    BinaryPath string
+    Timeout    time.Duration
 }
+
+func New(options Options) *Renderer
+func (r *Renderer) RenderFile(ctx context.Context, inputPath, outputPath string, data any) (string, error)
 ```
 
-Example: `typstrender.New(typstrender.Options{BinaryPath: "/usr/local/bin/typst", Timeout: 45*time.Second})`.
+An empty `BinaryPath` resolves `typst` through `PATH`. A zero or negative `Timeout` selects 30 seconds. A renderer can be reused concurrently.
 
-## 9. Error handling
+### `IsTemplateInput`
 
-Use `errors.Is` with `ErrInvalidInput`, `ErrTemplateNotFound`, `ErrTemplateExecution`, `ErrBinaryNotFound`, `ErrCompileFailed`, and `ErrOutputInvalid`. Context cancellation and deadlines preserve `context.Canceled` and `context.DeadlineExceeded`. Compiler errors include bounded stderr diagnostics. Filesystem errors retain their original cause.
-
-## 10. Testing
-
-```sh
-go test ./...
-go test -race ./...
-go vet ./...
-go test -cover ./...
-go test -tags integration ./...
-go test -bench=. ./...
+```go
+func IsTemplateInput(path string) bool
 ```
 
-Unit tests use a fake executable. Integration tests use the actual Typst CLI and skip when it is unavailable.
+Reports whether a path uses the supported `.typ` extension (case-insensitive).
 
-## 11. Limitations and security
+### Errors
 
-- Typst must be installed separately and available at runtime.
-- The helper supports Typst text markup, not every Typst language context.
-- Rendering untrusted templates can execute Typst features and must be treated as untrusted-code processing. Do not interpolate untrusted raw markup.
-- Temporary source staging requires write access to the template directory to preserve relative resource resolution.
-- Atomic replacement depends on filesystem rename semantics.
+Use `errors.Is` with `ErrInvalidInput`, `ErrTemplateNotFound`, `ErrTemplateExecution`, `ErrBinaryNotFound`, `ErrCompileFailed`, or `ErrOutputInvalid`. Cancellation and timeout also wrap `context.Canceled` and `context.DeadlineExceeded`. Filesystem errors retain their causes.
 
-## 12. License
+## Configuration and output behavior
 
-License terms have not been selected by the project owner. Do not redistribute this project under an assumed license until `LICENSE.md` is approved.
+Only `.typ` inputs and `.pdf` outputs are accepted. Relative and absolute output paths are supported; returned paths are absolute and cleaned. Typst runs without a shell and receives separate arguments. The default timeout is 30 seconds. Unique temporary source and PDF files are staged beside their respective files; staging source beside the input preserves relative imports and assets. A valid staged PDF is renamed into place. Failures remove staging files and preserve an existing destination. Avoid sharing writable source directories with untrusted users during rendering.
+
+## Error handling
+
+```go
+path, err := typstrender.RenderFile(ctx, "invoice.typ", "out/invoice.pdf", data)
+if err != nil {
+    switch {
+    case errors.Is(err, typstrender.ErrBinaryNotFound):
+        log.Println("Install Typst CLI")
+    case errors.Is(err, context.DeadlineExceeded):
+        log.Println("Rendering timed out")
+    case errors.Is(err, typstrender.ErrCompileFailed):
+        log.Println("Typst rejected the document:", err)
+    default:
+        log.Println("Render failed:", err)
+    }
+    return
+}
+log.Println("Created", path)
+```
+
+## Testing
+
+Run `go test ./...`, `go test -race ./...`, `go vet ./...`, and `go test -cover ./...`. Integration tests use a build tag: `go test -tags=integration ./...`. They require the official Typst CLI. Run the standalone demo with `go run ./examples/demo` from the project root.
+
+## Limitations
+
+Typst must be installed separately. The library validates the PDF signature, not the full PDF specification. `typstText` is only for text context. The library does not sandbox templates or restrict Typst filesystem access; the process timeout limits execution time. The project owner has not selected a license; see the unchecked licensing items in `TODO.md`.

@@ -40,6 +40,13 @@ func Compile(ctx context.Context, binaryPath, inputPath, outputPath string) erro
 			return fmt.Errorf("typst compile canceled: %w", context.Canceled)
 		}
 		message := strings.TrimSpace(stderr.String())
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if message != "" {
+				return fmt.Errorf("%w: exited with code %d: %s: %w", ErrCompileFailed, exitErr.ExitCode(), message, err)
+			}
+			return fmt.Errorf("%w: exited with code %d: %w", ErrCompileFailed, exitErr.ExitCode(), err)
+		}
 		if message != "" {
 			return fmt.Errorf("%w: %s: %w", ErrCompileFailed, message, err)
 		}
